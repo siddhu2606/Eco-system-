@@ -2,9 +2,10 @@ import asyncio
 import json
 import os
 from typing import Dict, Any, AsyncGenerator
+from pydantic import BaseModel
 
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sse_starlette.sse import EventSourceResponse
 
@@ -13,10 +14,33 @@ app = FastAPI()
 # Mount static directory for frontend files
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
+class ChatMessage(BaseModel):
+    message: str
+
 @app.get("/", response_class=HTMLResponse)
 async def serve_index():
     with open("static/index.html", "r", encoding="utf-8") as f:
         return f.read()
+
+@app.post("/api/chat")
+async def chat_endpoint(chat: ChatMessage):
+    # Mocking the AI response so no API key is needed for the demo
+    await asyncio.sleep(1.5) # Simulate thinking
+    user_msg = chat.message.lower()
+    
+    if "hello" in user_msg or "hi" in user_msg:
+        response = "Hello! I am Eco Buddy. How can I assist you with swarm monitoring or environmental data today?"
+    elif "mumbai" in user_msg:
+        response = "Mumbai's AQI is currently 142 (Moderate). The swarm recommends keeping heavy vehicles away from the harbor area."
+    elif "delhi" in user_msg:
+        response = "Delhi is experiencing a CRITICAL anomaly with PM2.5 levels soaring. Mitigation Action Plan 1 has been suggested by the Strategist."
+    elif "status" in user_msg:
+        response = "All edge nodes are synchronized. Swarm protocol readiness is nominal."
+    else:
+        response = "I have noted your inquiry. My diagnostic logs show all swarms are operating within expected parameters."
+        
+    return JSONResponse({"response": response})
+
 
 @app.get("/api/init-swarm")
 async def init_swarm(request: Request):
