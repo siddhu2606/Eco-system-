@@ -432,10 +432,16 @@ try{
         <h2 class="text-3xl font-bold text-white mb-1 tracking-tight">Swarm Commander Matrix</h2>
         <p class="text-sm font-mono text-primary/80 uppercase tracking-widest">Multi-Agent Protocol Readiness: Standby</p>
         </div>
-        <button class="btn-glow text-white font-bold px-8 py-3 rounded-xl transition-all flex items-center gap-2 shadow-lg" id="initBtn">
-        <span class="material-symbols-outlined">play_arrow</span>
-        <span class="tracking-wide" id="btnText">Initialize Swarm</span>
-        </button>
+        <div class="flex items-center gap-4">
+            <label class="flex items-center gap-2 cursor-pointer border border-error/50 bg-error/10 px-4 py-3 rounded-xl hover:bg-error/20 transition-colors shadow-[0_0_15px_rgba(255,0,0,0.1)]">
+                <input type="checkbox" id="demoModeToggle" class="form-checkbox text-error rounded border-error/50 bg-black/50 w-5 h-5 cursor-pointer focus:ring-error focus:ring-offset-black">
+                <span class="text-error font-bold text-sm tracking-wide">DEMO: INJECT ANOMALY</span>
+            </label>
+            <button class="btn-glow text-white font-bold px-8 py-3 rounded-xl transition-all flex items-center gap-2 shadow-lg" id="initBtn">
+            <span class="material-symbols-outlined">play_arrow</span>
+            <span class="tracking-wide" id="btnText">Initialize Swarm</span>
+            </button>
+        </div>
         </div>
         <div class="flex-1 flex gap-12 z-10">
         <!-- Left Column: Agent Cards -->
@@ -1024,7 +1030,8 @@ try{
 
             typeWriter("Establishing secure connection to swarm...", vidulaText);
 
-            const eventSource = new EventSource('/api/init-swarm');
+            const isAnomalyMode = document.getElementById('demoModeToggle') && document.getElementById('demoModeToggle').checked;
+            const eventSource = new EventSource(`/api/init-swarm?mode=${isAnomalyMode ? 'anomalous' : 'normal'}`);
 
             eventSource.addEventListener("connected", (e) => {
                 const data = JSON.parse(e.data);
@@ -1043,15 +1050,51 @@ try{
                 typeWriter(message, vidulaText);
 
                 // Update network node telemetry with new swarm status
-                networkNodes.mumbai.aqi = 124;
-                networkNodes.mumbai.status = "warning";
-                networkNodes.delhi.aqi = 210;
-                networkNodes.delhi.status = "critical";
-                networkNodes.pune.aqi = 85;
-                networkNodes.pune.status = "stable";
-                networkNodes.mumbai.drones = 28;
-                networkNodes.delhi.drones = 22;
-                networkNodes.pune.drones = 18;
+                if (!isAnomalyMode) {
+                    networkNodes.mumbai.aqi = 124;
+                    networkNodes.mumbai.status = "warning";
+                    networkNodes.delhi.aqi = 210;
+                    networkNodes.delhi.status = "critical";
+                    networkNodes.pune.aqi = 85;
+                    networkNodes.pune.status = "stable";
+                    networkNodes.mumbai.drones = 28;
+                    networkNodes.delhi.drones = 22;
+                    networkNodes.pune.drones = 18;
+                } else {
+                    networkNodes.delhi.aqi = "ERR";
+                    networkNodes.delhi.status = "critical";
+                }
+                renderNetwork();
+            });
+
+            // Guardrail Halt Event
+            eventSource.addEventListener("halt_execution", (e) => {
+                const data = JSON.parse(e.data);
+                
+                const haltHtml = `
+                <div class="mt-3 bg-error/20 border border-error text-error rounded-xl p-3 shadow-[0_0_15px_rgba(255,0,0,0.3)]">
+                    <div class="font-bold text-sm flex items-center gap-2 mb-1"><span class="material-symbols-outlined text-sm">warning</span> SYSTEM HALTED</div>
+                    <div class="text-xs">${data.details}</div>
+                </div>`;
+                
+                const bubble = appendMessage('bot', data.message, false);
+                bubble.innerHTML += haltHtml;
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+                
+                agent2.classList.remove('active'); // Analyst was active
+                agent1Status.innerText = "Status: HALTED";
+                agent1Status.classList.add('text-error');
+                
+                btnText.innerText = "Override / Reset";
+                initBtn.querySelector('span').innerText = "report";
+                initBtn.querySelector('span').classList.remove('animate-spin');
+                initBtn.classList.remove('active-glow');
+                isRunning = false;
+                eventSource.close();
+                
+                Object.keys(networkNodes).forEach(key => {
+                    networkNodes[key].status = 'critical';
+                });
                 renderNetwork();
             });
 
@@ -1072,8 +1115,26 @@ try{
                 agent3.classList.remove('active');
                 agent3Status.innerText = "Status: Deployed";
                 
-                const message = `${data.message}\n\nStrategy: ${data.details}`;
-                typeWriter(message, vidulaText);
+                try {
+                    const strategy = JSON.parse(data.details);
+                    const matrixHtml = `
+                    <div class="mt-4 bg-black/60 border border-primary/40 rounded-xl p-4 shadow-[0_0_15px_rgba(0,240,255,0.1)]">
+                        <div class="text-primary font-bold text-sm mb-2 border-b border-primary/20 pb-1 flex items-center gap-2"><span class="material-symbols-outlined text-sm">account_tree</span> DECISION MATRIX</div>
+                        <div class="text-xs text-white/90 grid grid-cols-1 gap-2 font-mono mt-2">
+                            <div><span class="text-white/50 block mb-0.5">ACTION:</span> <span class="text-secondary font-bold">${strategy.Action}</span></div>
+                            <div><span class="text-white/50 block mb-0.5">REASON:</span> ${strategy.Reason}</div>
+                            <div><span class="text-white/50 inline">CONFIDENCE:</span> <span class="text-tertiary-container font-bold">${strategy.Confidence}</span></div>
+                            <div><span class="text-white/50 block mb-0.5">IMPACT:</span> ${strategy.Impact}</div>
+                        </div>
+                    </div>`;
+                    
+                    const bubble = appendMessage('bot', data.message, false);
+                    bubble.innerHTML += matrixHtml;
+                    chatMessages.scrollTop = chatMessages.scrollHeight;
+                } catch(err) {
+                    const message = `${data.message}\n\nStrategy: ${data.details}`;
+                    typeWriter(message, vidulaText);
+                }
 
                 // Set all statuses to stable as mitigation plan deployed
                 networkNodes.mumbai.aqi = 88;

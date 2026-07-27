@@ -43,7 +43,7 @@ async def chat_endpoint(chat: ChatMessage):
 
 
 @app.get("/api/init-swarm")
-async def init_swarm(request: Request):
+async def init_swarm(request: Request, mode: str = "normal"):
     async def event_generator() -> AsyncGenerator[dict, None]:
         # Yield initial connected state
         yield {
@@ -54,7 +54,12 @@ async def init_swarm(request: Request):
         try:
             # 1. Simulate Harvester
             await asyncio.sleep(2.5) # Simulate thinking time
-            harvester_data = "Mumbai AQI: 142 (Moderate), PM2.5: 55 µg/m³. Delhi AQI: 310 (Hazardous), PM2.5: 210 µg/m³. Pune AQI: 85 (Satisfactory). Traffic density high in Delhi NCR."
+            
+            if mode == "anomalous":
+                harvester_data = "Mumbai AQI: 142. Delhi Temp: 500°C (CRITICAL SENSOR FAILURE). Pune Humidity: -10%."
+            else:
+                harvester_data = "Mumbai AQI: 142 (Moderate), PM2.5: 55 µg/m³. Delhi AQI: 310 (Hazardous), PM2.5: 210 µg/m³. Pune AQI: 85 (Satisfactory). Traffic density high in Delhi NCR."
+                
             yield {
                 "event": "harvester_done",
                 "data": json.dumps({
@@ -64,6 +69,18 @@ async def init_swarm(request: Request):
             }
             
             if await request.is_disconnected(): return
+
+            # GUARDRAIL / HALT MECHANISM
+            if mode == "anomalous":
+                await asyncio.sleep(1.0)
+                yield {
+                    "event": "halt_execution",
+                    "data": json.dumps({
+                        "message": "SYSTEM HALTED: Unsafe/Out-of-Scope data detected.",
+                        "details": "Validator Node caught erratic sensor readings (Delhi Temp: 500°C). Aborting Analyst and Strategist execution. Human override required."
+                    })
+                }
+                return
 
             # 2. Simulate Analyst
             await asyncio.sleep(3.0)
@@ -80,12 +97,21 @@ async def init_swarm(request: Request):
 
             # 3. Simulate Strategist
             await asyncio.sleep(3.5)
-            strategist_data = "Action Plan 1: Reroute heavy transit away from Delhi NCR during 7AM-10AM. Action Plan 2: Deploy automated air scrubbers in Mumbai industrial zones. Action Plan 3: Issue public health advisories via SMS."
+            
+            # EXPLAINABILITY MODULE / DECISION MATRIX
+            strategist_payload = {
+                "Action": "Reroute Traffic & Trigger Scrubbers",
+                "Reason": "Harvester detected Delhi PM2.5 at 210 µg/m³. Analyst projected 20% increase in congestion if no action is taken.",
+                "Confidence": "87%",
+                "Impact": "Estimated 15% reduction in localized PM2.5 within 2 hours.",
+                "Details": "Action Plan 1: Reroute heavy transit away from Delhi NCR during 7AM-10AM. Action Plan 2: Deploy automated air scrubbers in Mumbai industrial zones."
+            }
+            
             yield {
                 "event": "strategist_done",
                 "data": json.dumps({
                     "message": "Mitigation strategy formulated and deployed.",
-                    "details": strategist_data
+                    "details": json.dumps(strategist_payload)
                 })
             }
             
